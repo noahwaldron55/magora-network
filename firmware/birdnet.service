@@ -1,0 +1,15 @@
+[Unit]
+Description=BirdNET Detection
+After=network.target
+
+[Service]
+ExecStart=/home/magora/birdnet-env/bin/python3 /home/magora/detect.py
+WorkingDirectory=/home/magora
+StandardOutput=journal
+StandardError=journal
+Restart=always
+RestartSec=10
+User=magora
+
+[Install]
+WantedBy=multi-user.target
