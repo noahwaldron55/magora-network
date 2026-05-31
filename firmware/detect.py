@@ -240,7 +240,7 @@ while True:
         # ACI — post to both Sheets and Supabase
         aci_data = {
             "type": "aci",
-            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "location": location_name,
             "lat": lat,
             "lon": lon,
@@ -279,7 +279,7 @@ while True:
                 print(f"{now.strftime('%H:%M:%S')} {name} - {d['confidence']:.2f} | ACI: {aci} | {time_category} | Dawn: {dawn_label}")
                 bird_data = {
                     "type": "bird",
-                    "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "common_name": name,
                     "scientific_name": d['scientific_name'],
                     "confidence": round(d['confidence'], 2),
