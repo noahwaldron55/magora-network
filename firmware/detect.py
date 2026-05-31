@@ -3,7 +3,7 @@ import requests
 import json
 import os
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from astral import LocationInfo
 from astral.sun import sun
 from birdnetlib import Recording
@@ -214,7 +214,7 @@ print("Ready. Listening continuously. Press Ctrl+C to stop.\n")
 while True:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"/home/magora/recording_{timestamp}.wav"
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
 
     result = subprocess.run([
         "arecord", "-D", "plughw:0,0",
