@@ -118,32 +118,33 @@ def flush_queue(path):
     if flushed > 0:
         print(f"Flushed {flushed} queued items from {os.path.basename(path)}")
 
-def get_time_category(now, lat, lon):
+def get_time_category(now_utc, lat, lon):
+    # Use naive local time for astral comparison — the Pi's system clock is local
+    now_local = datetime.now()
     try:
         loc = LocationInfo(latitude=lat, longitude=lon)
-        # Pass tzinfo=timezone.utc so astral returns UTC-aware datetimes
-        s = sun(loc.observer, date=now.date(), tzinfo=timezone.utc)
-        sunrise = s['sunrise']
-        sunset  = s['sunset']
+        s = sun(loc.observer, date=now_local.date())
+        sunrise = s['sunrise'].replace(tzinfo=None)
+        sunset  = s['sunset'].replace(tzinfo=None)
         dawn_start = sunrise - timedelta(minutes=30)
         dawn_end   = sunrise + timedelta(minutes=60)
         dusk_start = sunset  - timedelta(minutes=30)
         dusk_end   = sunset  + timedelta(minutes=60)
 
-        if dawn_start <= now <= dawn_end:
+        if dawn_start <= now_local <= dawn_end:
             return "Dawn"
-        elif dawn_end < now <= sunrise + timedelta(hours=4):
+        elif dawn_end < now_local <= sunrise + timedelta(hours=4):
             return "Morning"
-        elif sunrise + timedelta(hours=4) < now <= sunset - timedelta(hours=2):
+        elif sunrise + timedelta(hours=4) < now_local <= sunset - timedelta(hours=2):
             return "Midday"
-        elif sunset - timedelta(hours=2) < now < dusk_start:
+        elif sunset - timedelta(hours=2) < now_local < dusk_start:
             return "Afternoon"
-        elif dusk_start <= now <= dusk_end:
+        elif dusk_start <= now_local <= dusk_end:
             return "Dusk"
         else:
             return "Night"
     except:
-        hour = now.hour
+        hour = now_local.hour
         if 5 <= hour < 9:   return "Dawn"
         elif 9 <= hour < 12:  return "Morning"
         elif 12 <= hour < 16: return "Midday"
@@ -153,12 +154,13 @@ def get_time_category(now, lat, lon):
 
 def get_temporal_context(now, lat, lon):
     """Calculate all Phase 1 temporal fields for a detection."""
+    now_local = datetime.now()
     try:
         loc = LocationInfo(latitude=lat, longitude=lon)
-        s = sun(loc.observer, date=now.date(), tzinfo=timezone.utc)
-        sunrise = s['sunrise']
+        s = sun(loc.observer, date=now_local.date())
+        sunrise = s['sunrise'].replace(tzinfo=None)
 
-        minutes_from_sunrise = int((now - sunrise).total_seconds() / 60)
+        minutes_from_sunrise = int((now_local - sunrise).total_seconds() / 60)
         dawn_chorus_window   = -30 <= minutes_from_sunrise <= 120
 
         day_of_year      = now.timetuple().tm_yday
