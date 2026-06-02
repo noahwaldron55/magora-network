@@ -2,6 +2,7 @@ import subprocess
 import requests
 import json
 import os
+import math
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from astral import LocationInfo
@@ -55,16 +56,20 @@ def save_queue(path, queue):
 def post_data(data):
     requests.post(SCRIPT_URL, json=data, timeout=10)
 
-def post_supabase_detection(name, scientific_name, confidence, lat, lon, dawn, aci, time_category, now):
+def post_supabase_detection(name, scientific_name, confidence, lat, lon, dawn, aci, time_category, now, temporal):
     try:
         payload = {
-            "node_id": NODE_ID,
-            "species_name": name,
-            "raw_label": scientific_name,
-            "confidence": confidence,
-            "detected_at": now.isoformat(),
-            "location": f"POINT({lon} {lat})",
-            "is_dawn_chorus": dawn,
+            "node_id":             NODE_ID,
+            "species_name":        name,
+            "raw_label":           scientific_name,
+            "confidence":          confidence,
+            "detected_at":         now.isoformat(),
+            "location":            f"POINT({lon} {lat})",
+            "is_dawn_chorus":      temporal.get("dawn_chorus_window") or dawn,
+            "minutes_from_sunrise": temporal.get("minutes_from_sunrise"),
+            "dawn_chorus_window":  temporal.get("dawn_chorus_window"),
+            "phenological_week":   temporal.get("phenological_week"),
+            "season":              temporal.get("season"),
         }
         r = requests.post(
             f"{SUPABASE_URL}/rest/v1/detections",
@@ -116,13 +121,14 @@ def flush_queue(path):
 def get_time_category(now, lat, lon):
     try:
         loc = LocationInfo(latitude=lat, longitude=lon)
-        s = sun(loc.observer, date=now.date())
-        sunrise = s['sunrise'].replace(tzinfo=None)
-        sunset = s['sunset'].replace(tzinfo=None)
+        # Pass tzinfo=timezone.utc so astral returns UTC-aware datetimes
+        s = sun(loc.observer, date=now.date(), tzinfo=timezone.utc)
+        sunrise = s['sunrise']
+        sunset  = s['sunset']
         dawn_start = sunrise - timedelta(minutes=30)
-        dawn_end = sunrise + timedelta(minutes=60)
-        dusk_start = sunset - timedelta(minutes=30)
-        dusk_end = sunset + timedelta(minutes=60)
+        dawn_end   = sunrise + timedelta(minutes=60)
+        dusk_start = sunset  - timedelta(minutes=30)
+        dusk_end   = sunset  + timedelta(minutes=60)
 
         if dawn_start <= now <= dawn_end:
             return "Dawn"
@@ -138,12 +144,47 @@ def get_time_category(now, lat, lon):
             return "Night"
     except:
         hour = now.hour
-        if 5 <= hour < 9: return "Dawn"
-        elif 9 <= hour < 12: return "Morning"
+        if 5 <= hour < 9:   return "Dawn"
+        elif 9 <= hour < 12:  return "Morning"
         elif 12 <= hour < 16: return "Midday"
         elif 16 <= hour < 19: return "Afternoon"
         elif 19 <= hour < 21: return "Dusk"
-        else: return "Night"
+        else:                 return "Night"
+
+def get_temporal_context(now, lat, lon):
+    """Calculate all Phase 1 temporal fields for a detection."""
+    try:
+        loc = LocationInfo(latitude=lat, longitude=lon)
+        s = sun(loc.observer, date=now.date(), tzinfo=timezone.utc)
+        sunrise = s['sunrise']
+
+        minutes_from_sunrise = int((now - sunrise).total_seconds() / 60)
+        dawn_chorus_window   = -30 <= minutes_from_sunrise <= 120
+
+        day_of_year      = now.timetuple().tm_yday
+        phenological_week = min(52, math.ceil(day_of_year / 7))
+
+        if phenological_week <= 10:   season = "winter"
+        elif phenological_week <= 18: season = "early_spring"
+        elif phenological_week <= 26: season = "breeding"
+        elif phenological_week <= 34: season = "post_breeding"
+        elif phenological_week <= 44: season = "fall_migration"
+        else:                         season = "late_fall"
+
+        return {
+            "minutes_from_sunrise": minutes_from_sunrise,
+            "dawn_chorus_window":   dawn_chorus_window,
+            "phenological_week":    phenological_week,
+            "season":               season,
+        }
+    except Exception as ex:
+        print(f"  Temporal context error: {ex}")
+        return {
+            "minutes_from_sunrise": None,
+            "dawn_chorus_window":   None,
+            "phenological_week":    None,
+            "season":               None,
+        }
 
 def is_dawn_chorus(time_category):
     return time_category == "Dawn"
@@ -230,12 +271,15 @@ while True:
         lat, lon, location_name = get_location()
         aci = calculate_aci(filename)
         time_category = get_time_category(now, lat, lon)
-        dawn = is_dawn_chorus(time_category)
+        temporal = get_temporal_context(now, lat, lon)
+        dawn = temporal.get("dawn_chorus_window") or is_dawn_chorus(time_category)
         dawn_label = "Yes" if dawn else "No"
         insect_label = get_insect_activity_label(aci, time_category)
 
         if dawn:
-            print(f"{now.strftime('%H:%M:%S')} DAWN CHORUS WINDOW")
+            mins = temporal.get("minutes_from_sunrise")
+            mins_str = f" (+{mins} min from sunrise)" if mins is not None else ""
+            print(f"{now.strftime('%H:%M:%S')} DAWN CHORUS WINDOW{mins_str}")
 
         # ACI — post to both Sheets and Supabase
         aci_data = {
@@ -300,7 +344,7 @@ while True:
                 post_supabase_detection(
                     name, d['scientific_name'],
                     round(d['confidence'], 2),
-                    lat, lon, dawn, aci, time_category, now
+                    lat, lon, dawn, aci, time_category, now, temporal
                 )
         else:
             aci_str = f" | ACI: {aci}" if aci is not None else ""
