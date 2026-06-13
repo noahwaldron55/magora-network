@@ -276,7 +276,7 @@ while True:
     now = datetime.now(timezone.utc)
 
     result = subprocess.run([
-        "arecord", "-D", "hw:1,0",
+        "arecord", "-D", "hw:adau7002,0",
         "-c2", "-r", "48000", "-f", "S32_LE",
         "-d", "15", filename
     ], capture_output=True)
