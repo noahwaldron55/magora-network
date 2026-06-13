@@ -3,6 +3,7 @@ Description=BirdNET Detection
 After=network.target
 
 [Service]
+EnvironmentFile=/home/magora/secrets.env
 ExecStart=/home/magora/birdnet-env/bin/python3 /home/magora/detect.py
 WorkingDirectory=/home/magora
 StandardOutput=journal

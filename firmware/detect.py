@@ -16,15 +16,40 @@ QUEUE_FILE = "/home/magora/retry_queue.json"
 ACI_QUEUE_FILE = "/home/magora/aci_queue.json"
 MIN_CONF = 0.25
 
-SUPABASE_URL = "https://wqxmmuwrfltpaxnuddwk.supabase.co"
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-NODE_ID = "1579fea9-761e-4ac3-9a40-793a9770727f"
-SUPABASE_HEADERS = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=minimal"
-}
+SUPABASE_URL     = "https://wqxmmuwrfltpaxnuddwk.supabase.co"
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+NODE_EMAIL       = os.environ.get("NODE_EMAIL", "")
+NODE_PASSWORD    = os.environ.get("NODE_PASSWORD", "")
+NODE_ID          = os.environ.get("NODE_ID", "")
+
+_token = None
+
+def sign_in():
+    global _token
+    r = requests.post(
+        f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+        headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+        json={"email": NODE_EMAIL, "password": NODE_PASSWORD},
+        timeout=15
+    )
+    r.raise_for_status()
+    _token = r.json()["access_token"]
+    print("Signed in to Supabase.")
+
+def get_headers():
+    return {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {_token}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+
+def _post_supabase(url, payload):
+    r = requests.post(url, headers=get_headers(), json=payload, timeout=10)
+    if r.status_code == 401:
+        sign_in()
+        r = requests.post(url, headers=get_headers(), json=payload, timeout=10)
+    return r
 
 EXCLUDE = {
     "Human vocal", "Human whistling", "Crowd",
@@ -71,12 +96,7 @@ def post_supabase_detection(name, scientific_name, confidence, lat, lon, dawn, a
             "phenological_week":   temporal.get("phenological_week"),
             "season":              temporal.get("season"),
         }
-        r = requests.post(
-            f"{SUPABASE_URL}/rest/v1/detections",
-            headers=SUPABASE_HEADERS,
-            json=payload,
-            timeout=10
-        )
+        r = _post_supabase(f"{SUPABASE_URL}/rest/v1/detections", payload)
         if r.status_code not in (200, 201):
             print(f"  Supabase detection error: {r.status_code} {r.text}")
     except Exception as ex:
@@ -92,12 +112,7 @@ def post_supabase_aci(aci, time_category, dawn, now):
             "dawn_chorus": dawn,
             "duration_secs": 15
         }
-        r = requests.post(
-            f"{SUPABASE_URL}/rest/v1/aci_logs",
-            headers=SUPABASE_HEADERS,
-            json=payload,
-            timeout=10
-        )
+        r = _post_supabase(f"{SUPABASE_URL}/rest/v1/aci_logs", payload)
         if r.status_code not in (200, 201):
             print(f"  Supabase ACI error: {r.status_code} {r.text}")
     except Exception as ex:
@@ -252,6 +267,7 @@ def get_insect_activity_label(aci, time_category):
 
 print("Loading model...")
 analyzer = Analyzer()
+sign_in()
 print("Ready. Listening continuously. Press Ctrl+C to stop.\n")
 
 while True:
