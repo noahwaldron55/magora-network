@@ -1,0 +1,54 @@
+name: Build Magora Node Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/magora-firstrun.sh'
+      - 'firmware/magora-firstrun.service'
+      - 'build/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y kpartx xz-utils
+
+      - name: Download Pi OS Lite (64-bit)
+        run: |
+          wget -q --show-progress -L \
+            https://downloads.raspberrypi.com/raspios_lite_arm64_latest \
+            -O raspios-lite-arm64.img.xz
+          xz -d raspios-lite-arm64.img.xz
+          mv raspios-lite-arm64.img magora-node.img
+
+      - name: Customize image
+        run: sudo bash build/customize-image.sh magora-node.img
+
+      - name: Compress image
+        run: xz -T0 -6 magora-node.img
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Magora Node Image (latest)
+          make_latest: true
+          body: |
+            ## Magora Node OS Image
+
+            Flash this to your SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+
+            **After flashing:** Copy your `magora-config.json` to the SD card's boot drive (the small partition that appears in Windows Explorer).
+
+            The node will self-provision on first boot — no SSH, no terminal needed.
+          files: magora-node.img.xz
+          token: ${{ secrets.GITHUB_TOKEN }}
