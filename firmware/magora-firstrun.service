@@ -1,0 +1,16 @@
+[Unit]
+Description=Magora Network — First Run Provisioning
+After=NetworkManager.service
+Wants=NetworkManager.service
+ConditionPathExists=!/var/lib/magora-firstrun-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/magora-firstrun.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
