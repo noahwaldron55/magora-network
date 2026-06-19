@@ -5,10 +5,15 @@
 set -e
 
 CONFIG="/boot/firmware/magora-config.json"
+STATUS_FILE="/boot/firmware/magora-status.txt"
 COMPLETE_FLAG="/var/lib/magora-firstrun-complete"
 LOG="/var/log/magora-firstrun.log"
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG"; }
+log() {
+  local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+  echo "$msg" | tee -a "$LOG"
+  echo "$msg" >> "$STATUS_FILE" 2>/dev/null || true
+}
 
 log "=== Magora Firstrun Starting ==="
 
@@ -69,7 +74,7 @@ fi
 
 # Set up magora service user
 log "Setting up magora user..."
-useradd -r -s /bin/false magora 2>/dev/null || true
+useradd -r -s /bin/bash -d /home/magora magora 2>/dev/null || true
 mkdir -p /home/magora
 usermod -aG audio magora 2>/dev/null || true
 
@@ -109,12 +114,20 @@ python3 -m venv /home/magora/birdnet-env
 PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 /home/magora/birdnet-env/bin/pip install -q --upgrade pip
 /home/magora/birdnet-env/bin/pip install -q birdnetlib astral numpy requests ai-edge-litert
+log "Python environment installed."
 
 # tflite_runtime compatibility shim
+log "Writing tflite shim..."
 TFLITE="/home/magora/birdnet-env/lib/python${PYVER}/site-packages/tflite_runtime"
 mkdir -p "$TFLITE"
 echo "" > "$TFLITE/__init__.py"
-echo "from ai_edge_litert.interpreter import Interpreter, load_delegate" > "$TFLITE/interpreter.py"
+cat > "$TFLITE/interpreter.py" << 'SHIMEOF'
+from ai_edge_litert.interpreter import Interpreter
+try:
+    from ai_edge_litert.interpreter import load_delegate
+except ImportError:
+    load_delegate = None
+SHIMEOF
 
 chown -R magora:magora /home/magora
 
@@ -122,6 +135,14 @@ chown -R magora:magora /home/magora
 log "Enabling and starting birdnet.service..."
 systemctl enable birdnet.service
 systemctl start birdnet.service
+
+# Verify it started
+sleep 15
+if systemctl is-active --quiet birdnet.service; then
+  log "birdnet.service is running."
+else
+  log "WARNING: birdnet.service failed to start. Check: journalctl -u birdnet"
+fi
 
 # Mark complete and disable self
 touch "$COMPLETE_FLAG"

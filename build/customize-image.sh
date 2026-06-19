@@ -64,6 +64,12 @@ fi
 # Belt-and-suspenders: ssh touchfile on bootfs
 touch "$MOUNT_DIR/boot/ssh"
 
+# Create debug SSH user: pi / magora123
+# Lets you SSH in and run: journalctl -u birdnet -f
+echo "Creating debug SSH user (pi / magora123)..."
+HASH=$(openssl passwd -6 'magora123')
+echo "pi:$HASH" > "$MOUNT_DIR/boot/userconf.txt"
+
 # Enable I2S mic overlay
 echo "Enabling I2S mic overlay..."
 CONFIG_TXT="$MOUNT_DIR/boot/config.txt"
