@@ -113,7 +113,7 @@ log "Installing Python environment (15-20 min on Pi Zero 2W)..."
 python3 -m venv /home/magora/birdnet-env
 PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 /home/magora/birdnet-env/bin/pip install -q --upgrade pip
-/home/magora/birdnet-env/bin/pip install -q birdnetlib astral numpy requests ai-edge-litert
+/home/magora/birdnet-env/bin/pip install -q birdnetlib librosa astral numpy requests ai-edge-litert
 log "Python environment installed."
 
 # tflite_runtime compatibility shim
