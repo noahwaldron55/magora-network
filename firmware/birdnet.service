@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 EnvironmentFile=/home/magora/secrets.env
-ExecStart=/home/magora/birdnet-env/bin/python3 /home/magora/detect.py
+ExecStart=/home/magora/birdnet-env/bin/python3 -u /home/magora/detect.py
 WorkingDirectory=/home/magora
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/boot/firmware/birdnet.log
+StandardError=append:/boot/firmware/birdnet.log
 Restart=always
 RestartSec=10
 User=magora
