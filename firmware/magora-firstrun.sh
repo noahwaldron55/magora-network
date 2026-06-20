@@ -109,14 +109,32 @@ wget -q -O /etc/systemd/system/birdnet.service \
 systemctl daemon-reload
 
 # Install Python environment
-log "Installing Python environment (20-30 min on Pi Zero 2W)..."
+log "Installing Python environment..."
 
-# Add swap so pip never OOMs during dependency install
+# Add swap to prevent OOM
 fallocate -l 512M /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile || true
 
 python3 -m venv /home/magora/birdnet-env
 PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-/home/magora/birdnet-env/bin/pip install --prefer-binary -q birdnetlib librosa astral numpy requests ai-edge-litert
+log "Python $PYVER venv created."
+
+pip_pkg() {
+  log "  pip: $1..."
+  if timeout 300 /home/magora/birdnet-env/bin/pip install --prefer-binary -q "$1"; then
+    log "  $1 OK"
+  else
+    log "  WARNING: $1 failed or timed out (exit $?)"
+  fi
+}
+
+pip_pkg "numpy"
+pip_pkg "requests"
+pip_pkg "astral"
+pip_pkg "soundfile"
+pip_pkg "librosa"
+pip_pkg "ai-edge-litert"
+pip_pkg "birdnetlib"
+
 log "Python environment installed."
 
 swapoff /swapfile && rm /swapfile || true
