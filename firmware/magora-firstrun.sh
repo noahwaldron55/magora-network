@@ -131,9 +131,8 @@ pip_pkg "numpy"
 pip_pkg "requests"
 pip_pkg "astral"
 pip_pkg "soundfile"
-pip_pkg "librosa"
 pip_pkg "ai-edge-litert"
-pip_pkg "birdnetlib"
+pip_pkg "birdnetlib==0.14.1"
 
 log "Python environment installed."
 
