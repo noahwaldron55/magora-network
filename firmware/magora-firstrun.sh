@@ -114,8 +114,10 @@ log "Installing Python environment..."
 # Add swap to prevent OOM
 fallocate -l 512M /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile || true
 
-python3 -m venv /home/magora/birdnet-env
-PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+# Use Python 3.11 — packages have stable wheels for it; 3.13 is too new
+apt-get install -y -q python3.11 python3.11-venv python3.11-dev 2>&1 | tail -1 | tee -a "$LOG" >> "$STATUS_FILE"
+python3.11 -m venv /home/magora/birdnet-env
+PYVER="3.11"
 log "Python $PYVER venv created."
 
 pip_pkg() {
@@ -132,7 +134,7 @@ pip_pkg "requests"
 pip_pkg "astral"
 pip_pkg "soundfile"
 pip_pkg "ai-edge-litert"
-pip_pkg "birdnetlib==0.14.1"
+pip_pkg "birdnetlib"
 
 log "Python environment installed."
 
