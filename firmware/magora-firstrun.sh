@@ -115,7 +115,8 @@ log "Installing Python environment..."
 fallocate -l 512M /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile || true
 
 # Use Python 3.11 — packages have stable wheels for it; 3.13 is too new
-apt-get install -y -q python3.11 python3.11-venv python3.11-dev 2>&1 | tail -1 | tee -a "$LOG" >> "$STATUS_FILE"
+apt-get update -q 2>&1 | tail -1 | tee -a "$LOG" >> "$STATUS_FILE"
+apt-get install -y -q python3.11 python3.11-venv 2>&1 | tail -1 | tee -a "$LOG" >> "$STATUS_FILE"
 python3.11 -m venv /home/magora/birdnet-env
 PYVER="3.11"
 log "Python $PYVER venv created."
