@@ -108,12 +108,51 @@ wget -q -O /etc/systemd/system/birdnet.service \
   https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/main/firmware/birdnet.service
 systemctl daemon-reload
 
-# Verify pre-installed Python environment (baked into image at build time)
-log "Verifying Python environment..."
-if /home/magora/birdnet-env/bin/python3 -c "import birdnetlib" 2>/dev/null; then
-  log "Python environment OK (birdnetlib verified)."
+# Set up Python environment
+log "Checking Python environment..."
+if /home/magora/birdnet-env/bin/python3 -c "import birdnetlib, librosa" 2>/dev/null; then
+  log "Python environment OK (birdnetlib + librosa verified)."
 else
-  log "WARNING: birdnetlib not found in pre-installed environment."
+  log "Pre-installed env incomplete — running pip install (takes 30-40 min on Pi Zero 2W)..."
+
+  # Swap helps prevent OOM during large pip builds
+  fallocate -l 512M /swapfile 2>/dev/null && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile || true
+
+  apt-get update -q 2>&1 | tail -1 >> "$STATUS_FILE"
+  apt-get install -y -q python3-venv 2>&1 | tail -1 >> "$STATUS_FILE"
+  python3 -m venv /home/magora/birdnet-env
+
+  pip_pkg() {
+    log "  pip: $1..."
+    if timeout 600 /home/magora/birdnet-env/bin/pip install --prefer-binary -q "$1"; then
+      log "  $1 OK"
+    else
+      log "  WARNING: $1 failed or timed out (exit $?)"
+    fi
+  }
+
+  pip_pkg "numpy"
+  pip_pkg "requests"
+  pip_pkg "astral"
+  pip_pkg "soundfile"
+  pip_pkg "ai-edge-litert"
+  pip_pkg "librosa"
+  pip_pkg "birdnetlib"
+
+  PYVER=$(/home/magora/birdnet-env/bin/python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+  TFLITE="/home/magora/birdnet-env/lib/python${PYVER}/site-packages/tflite_runtime"
+  mkdir -p "$TFLITE"
+  printf '' > "$TFLITE/__init__.py"
+  cat > "$TFLITE/interpreter.py" << 'SHIMEOF'
+from ai_edge_litert.interpreter import Interpreter
+try:
+    from ai_edge_litert.interpreter import load_delegate
+except ImportError:
+    load_delegate = None
+SHIMEOF
+
+  swapoff /swapfile && rm /swapfile || true
+  log "Python install complete."
 fi
 
 chown -R magora:magora /home/magora

@@ -110,7 +110,7 @@ python3 -m venv /home/magora/birdnet-env
 
 echo "-- Installing Python packages (this is the slow part)..."
 /home/magora/birdnet-env/bin/pip install --prefer-binary -q \
-  numpy requests astral soundfile ai-edge-litert birdnetlib
+  numpy requests astral soundfile ai-edge-litert librosa birdnetlib
 
 echo "-- Writing tflite_runtime shim..."
 PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
@@ -128,8 +128,8 @@ SHIMEOF
 echo "-- Setting ownership..."
 chown -R magora:magora /home/magora
 
-echo "-- Verifying birdnetlib import..."
-/home/magora/birdnet-env/bin/python3 -c "import birdnetlib; print('birdnetlib OK')"
+echo "-- Verifying birdnetlib + librosa import..."
+/home/magora/birdnet-env/bin/python3 -c "import birdnetlib, librosa; print('birdnetlib + librosa OK')"
 
 echo "-- Python environment pre-installed."
 CHROOT_EOF
