@@ -9,6 +9,8 @@ from astral import LocationInfo
 from astral.sun import sun
 from birdnetlib import Recording
 from birdnetlib.analyzer import Analyzer
+from scipy.signal import butter, sosfilt
+import scipy.io.wavfile as wavfile
 
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1MS_MwASMPbl6W0nvv5ChYLnwtEcfUOkAZSeKLSJ9bmS753Vdhnhn_3wjFCSmJwqYgw/exec"
 LOCATION_FILE = "/home/magora/location.json"
@@ -50,6 +52,22 @@ def _post_supabase(url, payload):
         sign_in()
         r = requests.post(url, headers=get_headers(), json=payload, timeout=10)
     return r
+
+def apply_highpass_filter(filename, cutoff_hz=500):
+    """Remove wind noise below 500Hz before BirdNET analysis."""
+    try:
+        rate, data = wavfile.read(filename)
+        sos = butter(4, cutoff_hz, btype='high', fs=rate, output='sos')
+        if data.ndim == 1:
+            filtered = sosfilt(sos, data.astype(np.float64)).astype(data.dtype)
+        else:
+            filtered = np.column_stack([
+                sosfilt(sos, data[:, i].astype(np.float64)).astype(data.dtype)
+                for i in range(data.shape[1])
+            ])
+        wavfile.write(filename, rate, filtered)
+    except Exception as ex:
+        print(f"High-pass filter error: {ex}")
 
 EXCLUDE = {
     "Human vocal", "Human whistling", "Crowd",
@@ -285,6 +303,8 @@ while True:
         print(f"Recording failed, skipping")
         continue
 
+    apply_highpass_filter(filename)
+
     try:
         lat, lon, location_name = get_location()
         aci = calculate_aci(filename)
@@ -326,9 +346,6 @@ while True:
         recording = Recording(
             analyzer,
             filename,
-            lat=lat,
-            lon=lon,
-            date=now,
             min_conf=MIN_CONF
         )
         recording.analyze()
