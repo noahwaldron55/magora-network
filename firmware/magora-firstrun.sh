@@ -100,9 +100,11 @@ cat > /home/magora/location.json << LOCEOF
 LOCEOF
 
 # Download firmware scripts
-log "Downloading detect.py..."
+# Update DETECT_SHA intentionally when releasing a new firmware version.
+DETECT_SHA=06744307156fa810962223520f26b08c4b0ea1c6
+log "Downloading detect.py (${DETECT_SHA:0:7})..."
 wget -q -O /home/magora/detect.py \
-  https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/main/firmware/detect.py
+  "https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/${DETECT_SHA}/firmware/detect.py"
 
 log "Downloading birdnet.service..."
 wget -q -O /etc/systemd/system/birdnet.service \
