@@ -84,6 +84,10 @@ grep -q "adau7002-simple" "$CONFIG_TXT" 2>/dev/null || \
 # Runs on the GitHub Actions x86_64 runner, installs ARM64 packages via QEMU emulation.
 # This eliminates all runtime pip install issues on the Pi.
 echo "Pre-installing Python environment (this takes a few minutes)..."
+if [ ! -f /usr/bin/qemu-aarch64-static ]; then
+  echo "Installing qemu-user-static..."
+  apt-get install -y -q qemu-user-static binfmt-support
+fi
 cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/root/usr/bin/"
 cp /etc/resolv.conf "$MOUNT_DIR/root/etc/resolv.conf"
 mount --bind /proc    "$MOUNT_DIR/root/proc"
