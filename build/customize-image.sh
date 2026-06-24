@@ -17,10 +17,6 @@ MOUNT_DIR=$(mktemp -d)
 
 cleanup() {
   echo "Cleaning up mounts..."
-  umount "$MOUNT_DIR/root/dev/pts" 2>/dev/null || true
-  umount "$MOUNT_DIR/root/dev"     2>/dev/null || true
-  umount "$MOUNT_DIR/root/sys"     2>/dev/null || true
-  umount "$MOUNT_DIR/root/proc"    2>/dev/null || true
   umount "$MOUNT_DIR/boot" 2>/dev/null || true
   umount "$MOUNT_DIR/root" 2>/dev/null || true
   [ -n "$LOOP" ] && losetup -d "$LOOP" 2>/dev/null || true
@@ -79,77 +75,5 @@ echo "Enabling I2S mic overlay..."
 CONFIG_TXT="$MOUNT_DIR/boot/config.txt"
 grep -q "adau7002-simple" "$CONFIG_TXT" 2>/dev/null || \
   printf "\ndtparam=i2s=on\ndtoverlay=adau7002-simple\n" >> "$CONFIG_TXT"
-
-# Pre-install Python environment using chroot + QEMU
-# Runs on the GitHub Actions x86_64 runner, installs ARM64 packages via QEMU emulation.
-# This eliminates all runtime pip install issues on the Pi.
-echo "Pre-installing Python environment (this takes a few minutes)..."
-if [ ! -f /usr/bin/qemu-aarch64-static ]; then
-  echo "Installing qemu-user-static..."
-  apt-get install -y -q qemu-user-static binfmt-support
-fi
-cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/root/usr/bin/"
-cp /etc/resolv.conf "$MOUNT_DIR/root/etc/resolv.conf"
-mount --bind /proc    "$MOUNT_DIR/root/proc"
-mount --bind /sys     "$MOUNT_DIR/root/sys"
-mount --bind /dev     "$MOUNT_DIR/root/dev"
-mount --bind /dev/pts "$MOUNT_DIR/root/dev/pts"
-
-chroot "$MOUNT_DIR/root" /bin/bash << 'CHROOT_EOF'
-set -e
-export DEBIAN_FRONTEND=noninteractive
-
-echo "-- Updating package lists..."
-apt-get update -q
-
-echo "-- Installing python3-venv..."
-apt-get install -y -q python3-venv
-
-echo "-- Creating magora user..."
-useradd -r -s /bin/bash -d /home/magora magora 2>/dev/null || true
-mkdir -p /home/magora
-
-echo "-- Creating Python venv..."
-python3 -m venv /home/magora/birdnet-env
-
-echo "-- Installing Python packages (this is the slow part)..."
-/home/magora/birdnet-env/bin/pip install --prefer-binary -q \
-  numpy requests astral soundfile ai-edge-litert birdnetlib
-
-# librosa may fail in QEMU emulation (aarch64 wheels not always available).
-# firstrun.sh will install it at runtime on real hardware if missing.
-echo "-- Attempting librosa install (non-fatal if it fails in QEMU)..."
-/home/magora/birdnet-env/bin/pip install --prefer-binary -q librosa 2>&1 || \
-  echo "librosa not pre-installed — firstrun.sh will install it on the device"
-
-echo "-- Writing tflite_runtime shim..."
-PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-TFLITE="/home/magora/birdnet-env/lib/python${PYVER}/site-packages/tflite_runtime"
-mkdir -p "$TFLITE"
-printf '' > "$TFLITE/__init__.py"
-cat > "$TFLITE/interpreter.py" << 'SHIMEOF'
-from ai_edge_litert.interpreter import Interpreter
-try:
-    from ai_edge_litert.interpreter import load_delegate
-except ImportError:
-    load_delegate = None
-SHIMEOF
-
-echo "-- Setting ownership..."
-chown -R magora:magora /home/magora
-
-echo "-- Verifying birdnetlib import..."
-/home/magora/birdnet-env/bin/python3 -c "import birdnetlib; print('birdnetlib OK')"
-/home/magora/birdnet-env/bin/python3 -c "import librosa; print('librosa OK')" 2>/dev/null || \
-  echo "librosa not in pre-baked env — firstrun.sh will install it at runtime"
-
-echo "-- Python environment pre-installed."
-CHROOT_EOF
-
-umount "$MOUNT_DIR/root/dev/pts" 2>/dev/null || true
-umount "$MOUNT_DIR/root/dev"     2>/dev/null || true
-umount "$MOUNT_DIR/root/sys"     2>/dev/null || true
-umount "$MOUNT_DIR/root/proc"    2>/dev/null || true
-rm -f "$MOUNT_DIR/root/usr/bin/qemu-aarch64-static"
 
 echo "=== Image customization complete ==="
