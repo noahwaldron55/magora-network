@@ -152,8 +152,7 @@ def flush_queue(path):
         print(f"Flushed {flushed} queued items from {os.path.basename(path)}")
 
 def get_time_category(now_utc, lat, lon):
-    # Use naive local time for astral comparison — the Pi's system clock is local
-    now_local = datetime.now()
+    now_local = now_utc.replace(tzinfo=None)
     try:
         loc = LocationInfo(latitude=lat, longitude=lon)
         s = sun(loc.observer, date=now_local.date())
@@ -187,7 +186,7 @@ def get_time_category(now_utc, lat, lon):
 
 def get_temporal_context(now, lat, lon):
     """Calculate all Phase 1 temporal fields for a detection."""
-    now_local = datetime.now()
+    now_local = now.replace(tzinfo=None)
     try:
         loc = LocationInfo(latitude=lat, longitude=lon)
         s = sun(loc.observer, date=now_local.date())
