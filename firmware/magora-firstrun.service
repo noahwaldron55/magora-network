@@ -1,6 +1,6 @@
 [Unit]
 Description=Magora Network — First Run Provisioning
-After=NetworkManager.service
+After=local-fs.target NetworkManager.service
 Wants=NetworkManager.service
 ConditionPathExists=!/var/lib/magora-firstrun-complete
 

@@ -11,7 +11,8 @@ LOG="/var/log/magora-firstrun.log"
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-  echo "$msg" | tee -a "$LOG"
+  echo "$msg"
+  echo "$msg" >> "$LOG" 2>/dev/null || true
   echo "$msg" >> "$STATUS_FILE" 2>/dev/null || true
 }
 
@@ -143,13 +144,7 @@ else
   TFLITE="/home/magora/birdnet-env/lib/python${PYVER}/site-packages/tflite_runtime"
   mkdir -p "$TFLITE"
   printf '' > "$TFLITE/__init__.py"
-  cat > "$TFLITE/interpreter.py" << 'SHIMEOF'
-from ai_edge_litert.interpreter import Interpreter
-try:
-    from ai_edge_litert.interpreter import load_delegate
-except ImportError:
-    load_delegate = None
-SHIMEOF
+  printf 'from ai_edge_litert.interpreter import Interpreter\ntry:\n    from ai_edge_litert.interpreter import load_delegate\nexcept ImportError:\n    load_delegate = None\n' > "$TFLITE/interpreter.py"
 
   swapoff /swapfile && rm /swapfile || true
   log "Python install complete."
