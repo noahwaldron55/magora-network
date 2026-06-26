@@ -365,6 +365,8 @@ while True:
                 name = d['common_name']
                 if name in EXCLUDE:
                     continue
+                if any(k in name for k in ("Katydid", "Cricket", "Grasshopper", "Cicada")):
+                    continue
                 if whitelist is not None and name.lower() not in whitelist:
                     if d['confidence'] < 0.5:
                         continue
