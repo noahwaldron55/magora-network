@@ -345,7 +345,6 @@ while True:
         recording = Recording(
             analyzer,
             filename,
-            lat=lat, lon=lon, date=now.date(),
             min_conf=MIN_CONF
         )
         recording.analyze()
