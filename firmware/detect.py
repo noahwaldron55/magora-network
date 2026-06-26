@@ -3,15 +3,12 @@ import requests
 import json
 import os
 import math
-import tempfile
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from astral import LocationInfo
 from astral.sun import sun
 from birdnetlib import Recording
 from birdnetlib.analyzer import Analyzer
-from scipy.signal import butter, sosfilt
-import scipy.io.wavfile as wavfile
 
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1MS_MwASMPbl6W0nvv5ChYLnwtEcfUOkAZSeKLSJ9bmS753Vdhnhn_3wjFCSmJwqYgw/exec"
 LOCATION_FILE = "/home/magora/location.json"
@@ -54,27 +51,6 @@ def _post_supabase(url, payload):
         r = requests.post(url, headers=get_headers(), json=payload, timeout=10)
     return r
 
-
-def make_filtered_copy(filename):
-    """Return path to a lowpass-filtered copy of filename for BirdNET analysis.
-    Ravens and songbirds are mostly below 4500 Hz; katydids peak above 3000 Hz.
-    Filtering reduces insect masking without touching the original file."""
-    try:
-        rate, data = wavfile.read(filename)
-        sos = butter(4, 4500, btype='low', fs=rate, output='sos')
-        if data.ndim == 1:
-            filtered = sosfilt(sos, data.astype(np.float64)).astype(data.dtype)
-        else:
-            filtered = np.column_stack([
-                sosfilt(sos, data[:, i].astype(np.float64)).astype(data.dtype)
-                for i in range(data.shape[1])
-            ])
-        tmp = tempfile.mktemp(suffix='.wav', dir='/home/magora/')
-        wavfile.write(tmp, rate, filtered)
-        return tmp
-    except Exception as ex:
-        print(f"Filter error (using original): {ex}")
-        return filename
 
 EXCLUDE = {
     "Human vocal", "Human whistling", "Crowd",
@@ -346,14 +322,9 @@ while True:
         if aci is not None:
             post_supabase_aci(aci, time_category, dawn, now)
 
-        # Bird detection — lowpass-filter first to reduce insect masking
-        filtered = make_filtered_copy(filename)
-        try:
-            recording = Recording(analyzer, filtered, min_conf=MIN_CONF)
-            recording.analyze()
-        finally:
-            if filtered != filename and os.path.exists(filtered):
-                os.remove(filtered)
+        # Bird detection
+        recording = Recording(analyzer, filename, min_conf=MIN_CONF)
+        recording.analyze()
 
         if recording.detections:
             for d in recording.detections:
