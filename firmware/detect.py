@@ -14,7 +14,7 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1MS_MwASMPbl6W0nvv5ChYLn
 LOCATION_FILE = "/home/magora/location.json"
 QUEUE_FILE = "/home/magora/retry_queue.json"
 ACI_QUEUE_FILE = "/home/magora/aci_queue.json"
-MIN_CONF = 0.1
+MIN_CONF = 0.07
 
 SUPABASE_URL     = "https://wqxmmuwrfltpaxnuddwk.supabase.co"
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
@@ -57,7 +57,9 @@ EXCLUDE = {
     "Dog", "Cat",
     "Engine", "Siren", "Power tools", "Gun",
     "Fireworks", "Hand saw", "Chainsaw",
-    "Car", "Truck", "Motorcycle"
+    "Car", "Truck", "Motorcycle",
+    # Seabirds BirdNET confuses with Common Raven calls
+    "Laysan Albatross", "Black-footed Albatross",
 }
 
 def get_location():
