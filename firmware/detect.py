@@ -267,9 +267,41 @@ def get_insect_activity_label(aci, time_category):
         else: return "Quiet transition period"
     return ""
 
+WHITELIST_FILE = "/home/magora/species_whitelist.json"
+
+def fetch_whitelist():
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/nodes",
+            headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+            params={"id": f"eq.{NODE_ID}", "select": "species_whitelist"},
+            timeout=10
+        )
+        rows = r.json()
+        wl = rows[0].get("species_whitelist") if rows else None
+        if wl and len(wl) > 0:
+            with open(WHITELIST_FILE, "w") as f:
+                json.dump(wl, f)
+            print(f"Whitelist loaded: {len(wl)} species from eBird")
+            return set(s.lower() for s in wl)
+    except Exception as ex:
+        print(f"Whitelist fetch error: {ex}")
+    # Fall back to cached file
+    try:
+        with open(WHITELIST_FILE) as f:
+            wl = json.load(f)
+        if wl:
+            print(f"Whitelist loaded from cache: {len(wl)} species")
+            return set(s.lower() for s in wl)
+    except:
+        pass
+    print("No whitelist — running without species filtering")
+    return None
+
 print("Loading model...")
 analyzer = Analyzer()
 sign_in()
+whitelist = fetch_whitelist()
 print("Ready. Listening continuously. Press Ctrl+C to stop.\n")
 
 while True:
@@ -333,6 +365,10 @@ while True:
                 name = d['common_name']
                 if name in EXCLUDE:
                     continue
+                if whitelist is not None and name.lower() not in whitelist:
+                    if d['confidence'] < 0.5:
+                        continue
+                    print(f"{now.strftime('%H:%M:%S')} UNUSUAL {name} - {d['confidence']:.2f} (not in regional eBird list)")
                 print(f"{now.strftime('%H:%M:%S')} {name} - {d['confidence']:.2f} | ACI: {aci} | {time_category} | Dawn: {dawn_label}")
                 bird_data = {
                     "type": "bird",
