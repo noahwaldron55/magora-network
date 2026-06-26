@@ -3,20 +3,21 @@ import requests
 import json
 import os
 import math
-import urllib.request
-import csv as _csv
+import tempfile
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from astral import LocationInfo
 from astral.sun import sun
 from birdnetlib import Recording
 from birdnetlib.analyzer import Analyzer
+from scipy.signal import butter, sosfilt
+import scipy.io.wavfile as wavfile
 
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1MS_MwASMPbl6W0nvv5ChYLnwtEcfUOkAZSeKLSJ9bmS753Vdhnhn_3wjFCSmJwqYgw/exec"
 LOCATION_FILE = "/home/magora/location.json"
 QUEUE_FILE = "/home/magora/retry_queue.json"
 ACI_QUEUE_FILE = "/home/magora/aci_queue.json"
-MIN_CONF = 0.05
+MIN_CONF = 0.1
 
 SUPABASE_URL     = "https://wqxmmuwrfltpaxnuddwk.supabase.co"
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
@@ -54,88 +55,26 @@ def _post_supabase(url, payload):
     return r
 
 
-YAMNET_MODEL_PATH = "/home/magora/yamnet.tflite"
-YAMNET_CLASSES_PATH = "/home/magora/yamnet_classes.csv"
-YAMNET_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite"
-YAMNET_CLASSES_URL = "https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv"
-YAMNET_CONF = 0.3
-
-# Non-bird wildlife to surface — BirdNET handles birds
-YAMNET_WILDLIFE = {
-    'Frog', 'Tree frog', 'Croak', 'Insect', 'Cricket',
-    'Cicada, and treecricket', 'Bee, wasp, etc.', 'Mosquito',
-    'Wild animals', 'Squirrel',
-}
-
-_yamnet_interp = None
-_yamnet_classes = []
-
-def setup_yamnet():
-    global _yamnet_interp, _yamnet_classes
+def make_filtered_copy(filename):
+    """Return path to a lowpass-filtered copy of filename for BirdNET analysis.
+    Ravens and songbirds are mostly below 4500 Hz; katydids peak above 3000 Hz.
+    Filtering reduces insect masking without touching the original file."""
     try:
-        for path, url in [
-            (YAMNET_MODEL_PATH, YAMNET_MODEL_URL),
-            (YAMNET_CLASSES_PATH, YAMNET_CLASSES_URL),
-        ]:
-            if not os.path.exists(path):
-                print(f"Downloading {os.path.basename(path)}...")
-                urllib.request.urlretrieve(url, path)
-        with open(YAMNET_CLASSES_PATH) as f:
-            _yamnet_classes = [row['display_name'] for row in _csv.DictReader(f)]
-        try:
-            from ai_edge_litert.interpreter import Interpreter
-        except ImportError:
-            from tflite_runtime.interpreter import Interpreter
-        _yamnet_interp = Interpreter(model_path=YAMNET_MODEL_PATH)
-        _yamnet_interp.allocate_tensors()
-        print(f"YAMNet ready ({len(_yamnet_classes)} classes)")
+        rate, data = wavfile.read(filename)
+        sos = butter(4, 4500, btype='low', fs=rate, output='sos')
+        if data.ndim == 1:
+            filtered = sosfilt(sos, data.astype(np.float64)).astype(data.dtype)
+        else:
+            filtered = np.column_stack([
+                sosfilt(sos, data[:, i].astype(np.float64)).astype(data.dtype)
+                for i in range(data.shape[1])
+            ])
+        tmp = tempfile.mktemp(suffix='.wav', dir='/home/magora/')
+        wavfile.write(tmp, rate, filtered)
+        return tmp
     except Exception as ex:
-        print(f"YAMNet setup failed (continuing without it): {ex}")
-        _yamnet_interp = None
-
-def analyze_yamnet(wav_file):
-    global _yamnet_interp, _yamnet_classes
-    if _yamnet_interp is None:
-        return []
-    try:
-        import wave as _wave
-        with _wave.open(wav_file, 'r') as wf:
-            rate = wf.getframerate()
-            n_ch = wf.getnchannels()
-            samp = wf.getsampwidth()
-            raw = wf.readframes(wf.getnframes())
-        dtype = np.int16 if samp == 2 else np.int32
-        samples = np.frombuffer(raw, dtype=dtype).astype(np.float32)
-        if n_ch > 1:
-            samples = samples.reshape(-1, n_ch).mean(axis=1)
-        samples /= float(np.iinfo(dtype).max)
-        if rate != 16000:
-            new_len = int(len(samples) * 16000 / rate)
-            samples = np.interp(
-                np.linspace(0, len(samples) - 1, new_len),
-                np.arange(len(samples)), samples
-            ).astype(np.float32)
-        chunk = 15600
-        in_det = _yamnet_interp.get_input_details()
-        out_det = _yamnet_interp.get_output_details()
-        exp_shape = tuple(in_det[0]['shape'])
-        all_scores = []
-        for i in range(0, len(samples) - chunk + 1, chunk):
-            frame = samples[i:i + chunk].reshape(exp_shape)
-            _yamnet_interp.set_tensor(in_det[0]['index'], frame)
-            _yamnet_interp.invoke()
-            all_scores.append(_yamnet_interp.get_tensor(out_det[0]['index']).flatten())
-        if not all_scores:
-            return []
-        mean_scores = np.mean(all_scores, axis=0)
-        return [
-            (_yamnet_classes[i], float(s))
-            for i, s in enumerate(mean_scores)
-            if i < len(_yamnet_classes) and s >= YAMNET_CONF and _yamnet_classes[i] in YAMNET_WILDLIFE
-        ]
-    except Exception as ex:
-        print(f"YAMNet error: {ex}")
-        return []
+        print(f"Filter error (using original): {ex}")
+        return filename
 
 EXCLUDE = {
     "Human vocal", "Human whistling", "Crowd",
@@ -352,7 +291,6 @@ def get_insect_activity_label(aci, time_category):
 
 print("Loading model...")
 analyzer = Analyzer()
-setup_yamnet()
 sign_in()
 print("Ready. Listening continuously. Press Ctrl+C to stop.\n")
 
@@ -408,13 +346,14 @@ while True:
         if aci is not None:
             post_supabase_aci(aci, time_category, dawn, now)
 
-        # Bird detection — post to both Sheets and Supabase
-        recording = Recording(
-            analyzer,
-            filename,
-            min_conf=MIN_CONF
-        )
-        recording.analyze()
+        # Bird detection — lowpass-filter first to reduce insect masking
+        filtered = make_filtered_copy(filename)
+        try:
+            recording = Recording(analyzer, filtered, min_conf=MIN_CONF)
+            recording.analyze()
+        finally:
+            if filtered != filename and os.path.exists(filtered):
+                os.remove(filtered)
 
         if recording.detections:
             for d in recording.detections:
@@ -452,11 +391,6 @@ while True:
             cat_str = f" | {time_category}"
             insect_str = f" | {insect_label}" if insect_label else ""
             print(f"{now.strftime('%H:%M:%S')} No birds detected{aci_str}{cat_str}{insect_str}")
-
-        # YAMNet wildlife detection (frogs, insects, squirrels, etc.)
-        for (species, conf) in analyze_yamnet(filename):
-            print(f"{now.strftime('%H:%M:%S')} [Wildlife] {species} - {conf:.2f}")
-            post_supabase_detection(species, '', round(conf, 2), lat, lon, dawn, aci, time_category, now, temporal)
 
     except Exception as ex:
         print(f"Analysis error: {ex}")
