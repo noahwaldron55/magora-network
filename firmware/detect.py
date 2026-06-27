@@ -14,7 +14,10 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1MS_MwASMPbl6W0nvv5ChYLn
 LOCATION_FILE = "/home/magora/location.json"
 QUEUE_FILE = "/home/magora/retry_queue.json"
 ACI_QUEUE_FILE = "/home/magora/aci_queue.json"
-MIN_CONF = 0.20
+MIN_CONF = 0.20      # detection floor; BOU study: 0.1–0.3 = "detect as many as possible"
+SENSITIVITY = 1.25   # sigmoid sensitivity; BirdNET-Pi high-sensitivity default (range 0.5–1.5)
+OVERLAP = 1.5        # seconds of overlap between BirdNET's 3s windows. BOU study found ~2.0
+                     # optimal; 1.5 balances detection richness against Pi Zero 2W analysis time.
 
 SUPABASE_URL     = "https://wqxmmuwrfltpaxnuddwk.supabase.co"
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
@@ -357,7 +360,12 @@ while True:
             post_supabase_aci(aci, time_category, dawn, now)
 
         # Bird detection
-        recording = Recording(analyzer, filename, min_conf=MIN_CONF)
+        recording = Recording(
+            analyzer, filename,
+            min_conf=MIN_CONF,
+            sensitivity=SENSITIVITY,
+            overlap=OVERLAP,
+        )
         recording.analyze()
 
         if recording.detections:
