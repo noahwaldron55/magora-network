@@ -213,23 +213,18 @@ def is_dawn_chorus(time_category):
 
 def calculate_aci(wav_file):
     try:
-        import wave
-        with wave.open(wav_file, 'r') as wf:
-            n_frames = wf.getnframes()
-            n_channels = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            framerate = wf.getframerate()
-            raw = wf.readframes(n_frames)
+        # Read via soundfile (same robust path BirdNET uses). The stdlib `wave`
+        # module misreads arecord's S32_LE WAVE_FORMAT_EXTENSIBLE files and
+        # returns digital silence, which zeroed out ACI.
+        import soundfile as sf
+        data, framerate = sf.read(wav_file)  # float64, normalized to [-1, 1]
 
-        if sampwidth == 2:
-            samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
-        elif sampwidth == 4:
-            samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32)
+        if data.ndim > 1:
+            # ADAU7002 can leave one channel dead — use the channel with signal.
+            energies = np.sum(np.abs(data), axis=0)
+            samples = data[:, int(np.argmax(energies))]
         else:
-            return None
-
-        if n_channels > 1:
-            samples = samples[::n_channels]
+            samples = data
 
         max_val = np.max(np.abs(samples))
         if max_val == 0:
