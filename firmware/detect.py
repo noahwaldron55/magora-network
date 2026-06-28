@@ -19,6 +19,10 @@ MIN_CONF = 0.20      # detection floor; BOU study: 0.1–0.3 = "detect as many a
 SENSITIVITY = 1.25   # sigmoid sensitivity; BirdNET-Pi high-sensitivity default (range 0.5–1.5)
 OVERLAP = 1.5        # seconds of overlap between BirdNET's 3s windows. BOU study found ~2.0
                      # optimal; 1.5 balances detection richness against Pi Zero 2W analysis time.
+WHITELIST_BYPASS_CONF = 0.70  # species absent from the regional eBird whitelist are kept only
+                              # above this confidence (catches genuine local rarities/lump
+                              # victims like Cordilleran Flycatcher while suppressing exotic
+                              # false positives — Torresian Crow, Black Scoter, etc.)
 
 SUPABASE_URL     = "https://wqxmmuwrfltpaxnuddwk.supabase.co"
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
@@ -57,7 +61,7 @@ def _post_supabase(url, payload):
 
 
 EXCLUDE = {
-    "Human vocal", "Human whistling", "Crowd",
+    "Human vocal", "Human non-vocal", "Human whistling", "Crowd",
     "Dog", "Cat",
     "Engine", "Siren", "Power tools", "Gun",
     "Fireworks", "Hand saw", "Chainsaw",
@@ -269,22 +273,30 @@ def get_insect_activity_label(aci, time_category):
 WHITELIST_FILE = "/home/magora/species_whitelist.json"
 
 def fetch_whitelist():
-    try:
-        r = requests.get(
-            f"{SUPABASE_URL}/rest/v1/nodes",
-            headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
-            params={"id": f"eq.{NODE_ID}", "select": "species_whitelist"},
-            timeout=10
-        )
-        rows = r.json()
-        wl = rows[0].get("species_whitelist") if rows else None
-        if wl and len(wl) > 0:
-            with open(WHITELIST_FILE, "w") as f:
-                json.dump(wl, f)
-            print(f"Whitelist loaded: {len(wl)} species from eBird")
-            return set(s.lower() for s in wl)
-    except Exception as ex:
-        print(f"Whitelist fetch error: {ex}")
+    # Retry the network fetch: the service often starts before WiFi is up, and a
+    # single failed fetch with no cache would silently disable species filtering
+    # for the whole session (observed: exotic false positives flooding in at >0.20).
+    for attempt in range(6):
+        try:
+            r = requests.get(
+                f"{SUPABASE_URL}/rest/v1/nodes",
+                headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+                params={"id": f"eq.{NODE_ID}", "select": "species_whitelist"},
+                timeout=10
+            )
+            rows = r.json()
+            wl = rows[0].get("species_whitelist") if rows else None
+            if wl and len(wl) > 0:
+                with open(WHITELIST_FILE, "w") as f:
+                    json.dump(wl, f)
+                print(f"Whitelist loaded: {len(wl)} species from eBird")
+                return set(s.lower() for s in wl)
+            # Reached Supabase but column empty/null — retrying won't help.
+            print("Whitelist fetch: node has no species_whitelist set")
+            break
+        except Exception as ex:
+            print(f"Whitelist fetch error (attempt {attempt + 1}/6): {ex}")
+            time.sleep(10)
     # Fall back to cached file
     try:
         with open(WHITELIST_FILE) as f:
@@ -391,7 +403,7 @@ while True:
                 if any(k in name for k in ("Katydid", "Cricket", "Grasshopper", "Cicada")):
                     continue
                 if whitelist is not None and name.lower() not in whitelist:
-                    if d['confidence'] < 0.5:
+                    if d['confidence'] < WHITELIST_BYPASS_CONF:
                         continue
                     print(f"{now.strftime('%H:%M:%S')} UNUSUAL {name} - {d['confidence']:.2f} (not in regional eBird list)")
                 print(f"{now.strftime('%H:%M:%S')} {name} - {d['confidence']:.2f} | ACI: {aci} | {time_category} | Dawn: {dawn_label}")
