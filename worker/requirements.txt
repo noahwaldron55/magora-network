@@ -1,0 +1,10 @@
+# Magora Listen worker dependencies.
+# birdnetlib runs the BirdNET model; on x86_64 it uses tflite-runtime (matches the
+# Pi nodes). If tflite-runtime has no wheel for the Python version in the image,
+# swap it for `tensorflow-cpu` (much larger image; bump the Fly VM memory).
+supabase>=2.4,<3
+birdnetlib
+numpy
+librosa
+soundfile
+tflite-runtime
