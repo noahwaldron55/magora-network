@@ -15,6 +15,7 @@ Deploy: Fly.io. Secrets required: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import os
 import time
 import tempfile
+from datetime import datetime
 
 from supabase import create_client, Client
 from birdnetlib import Recording
@@ -54,14 +55,26 @@ print("Model ready. Polling audio_inference queue.\n", flush=True)
 
 
 # ── Inference ─────────────────────────────────────────────────────────────────
-def run_birdnet(path: str) -> list[dict]:
-    """Run BirdNET on an audio file, return cleaned species results (best-first)."""
-    recording = Recording(
-        analyzer, path,
-        min_conf=MIN_CONF,
-        sensitivity=SENSITIVITY,
-        overlap=OVERLAP,
-    )
+def _parse_date(iso):
+    """ISO timestamp string -> date, for BirdNET's week-of-year species filter."""
+    try:
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).date()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def run_birdnet(path: str, lat=None, lon=None, rec_date=None) -> list[dict]:
+    """Run BirdNET on an audio file, return cleaned species results (best-first).
+
+    When lat/lon (and date) are supplied, BirdNET's location filter restricts
+    results to species plausible at that place and time of year — the mobile
+    equivalent of the Pi nodes' eBird regional whitelist. Without coordinates it
+    falls back to an unfiltered run.
+    """
+    kwargs = dict(min_conf=MIN_CONF, sensitivity=SENSITIVITY, overlap=OVERLAP)
+    if lat is not None and lon is not None:
+        kwargs.update(lat=lat, lon=lon, date=rec_date)
+    recording = Recording(analyzer, path, **kwargs)
     recording.analyze()
 
     best: dict[str, dict] = {}  # common_name -> best detection, deduped across windows
@@ -86,6 +99,13 @@ def process_job(message: dict) -> None:
     detection_id = message["detection_id"]
     audio_path = message["audio_path"]  # in-bucket path, e.g. {user_id}/{id}.wav
 
+    # Location + time drive BirdNET's regional species filter.
+    row = supabase.table("mobile_detections") \
+        .select("lat, lon, detected_at").eq("id", detection_id).single().execute()
+    lat = row.data["lat"]
+    lon = row.data["lon"]
+    rec_date = _parse_date(row.data["detected_at"])
+
     supabase.table("mobile_detections").update(
         {"status": "processing"}
     ).eq("id", detection_id).execute()
@@ -97,7 +117,7 @@ def process_job(message: dict) -> None:
         f.write(audio_bytes)
         tmp_path = f.name
     try:
-        species = run_birdnet(tmp_path)
+        species = run_birdnet(tmp_path, lat=lat, lon=lon, rec_date=rec_date)
     finally:
         os.unlink(tmp_path)
 

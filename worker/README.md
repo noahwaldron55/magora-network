@@ -19,6 +19,12 @@ BirdNET is run with the exact parameters from `firmware/detect.py`
 human/vehicle/insect exclusion filter, so a mobile Listen is directly comparable
 to a node detection.
 
+**Regional filtering:** the Pi nodes use a fixed per-node eBird whitelist. Mobile
+recordings have a variable location, so instead the worker passes the recording's
+`lat`/`lon`/`date` to BirdNET's built-in location filter (its eBird-derived range
+model), restricting results to species plausible at that place and time of year.
+This is what keeps implausible IDs (e.g. a Wyoming "Black-faced Ibis") out.
+
 > **Version note:** the Pi installs `birdnetlib` unpinned. For true result parity,
 > pin `birdnetlib` here to whatever the nodes run (`pip show birdnetlib` on a Pi),
 > then rebuild.
