@@ -4,7 +4,7 @@
 # swap it for `tensorflow-cpu` (much larger image; bump the Fly VM memory).
 supabase>=2.4,<3
 birdnetlib
-numpy
+numpy>=1.24,<2     # tflite-runtime is built against NumPy 1.x; NumPy 2.x breaks the model load
 librosa
 soundfile
 tflite-runtime

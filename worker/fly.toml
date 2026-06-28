@@ -1,23 +1,25 @@
 # Magora — Listen inference worker (Fly.io).
 # Pulls jobs from the Supabase pgmq `audio_inference` queue, runs BirdNET, writes
-# results to mobile_detections, deletes the temp audio. No inbound HTTP service.
-app = "magora-listen-worker"
-primary_region = "den"   # Denver — closest region to the Wyoming nodes/users
+# results to mobile_detections, deletes the temp audio.
+#
+# NOTE: there is intentionally NO [http_service] block. This worker has no web
+# server — it just polls. An http_service would health-check a dead port and
+# auto-stop the machine when there's no HTTP traffic, which would kill the worker.
+app = 'magora-listen-worker'
+primary_region = 'dfw'
 
 [build]
 
 [env]
-  POLL_INTERVAL_SECONDS = "5"
-  JOB_VISIBILITY_TIMEOUT = "120"
-  MAX_ATTEMPTS = "5"
-
-# Single always-on worker to start. Scale out later with `fly scale count N` —
-# the queue's visibility timeout stops two workers from grabbing the same job.
-# No [http_service] block, so the machine has no public service and should not
-# auto-stop; it just polls.
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "1024"   # MB. The spec floated 256MB, but the BirdNET model needs more.
+  POLL_INTERVAL_SECONDS = '5'
+  JOB_VISIBILITY_TIMEOUT = '120'
+  MAX_ATTEMPTS = '5'
 
 [processes]
-  app = "python inference_worker.py"
+  app = 'python inference_worker.py'
+
+# Single always-on worker. Scale out later with `fly scale count N` — the queue's
+# visibility timeout stops two workers from grabbing the same job.
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '1024'   # MB. The spec floated 256MB, but the BirdNET model needs more.
