@@ -2,6 +2,7 @@ import subprocess
 import requests
 import json
 import os
+import time
 import math
 import numpy as np
 from datetime import datetime, timedelta, timezone
@@ -307,11 +308,30 @@ while True:
     filename = f"/home/magora/recording_{timestamp}.wav"
     now = datetime.now(timezone.utc)
 
-    result = subprocess.run([
-        "arecord", "-D", "hw:adau7002,0",
-        "-c2", "-r", "48000", "-f", "S32_LE",
-        "-d", "15", filename
-    ], capture_output=True)
+    try:
+        result = subprocess.run([
+            "arecord", "-D", "hw:adau7002,0",
+            "-c2", "-r", "48000", "-f", "S32_LE",
+            "-d", "15", filename
+        ], capture_output=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        # arecord wedged on the audio device (it should finish in ~15s). Kill it so
+        # the device is released, skip this window, and keep looping instead of
+        # hanging forever. Brief settle before the next capture attempt.
+        subprocess.run(["pkill", "-9", "arecord"])
+        print(f"{now.strftime('%H:%M:%S')} arecord timed out (audio device wedged) — killed it, skipping window")
+        if os.path.exists(filename):
+            os.remove(filename)
+        time.sleep(2)
+        continue
+
+    if result.returncode != 0:
+        err = result.stderr.decode(errors="ignore").strip()[:200]
+        print(f"{now.strftime('%H:%M:%S')} arecord failed (rc={result.returncode}): {err}")
+        if os.path.exists(filename):
+            os.remove(filename)
+        time.sleep(2)
+        continue
 
     if not os.path.exists(filename):
         print(f"Recording failed, skipping")
